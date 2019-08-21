@@ -35,12 +35,15 @@ type Server struct {
 	rpcClient *rpcplugin.Client
 }
 
+/**
+初始化server
+*/
 func ParsePlugins(pipelineConfig config.PipelineConfigV3) (*Server, error) {
 	pipelineConfig = pipelineConfig.DeepCopy()
 
 	server := Server{}
 
-	// output
+	// output 获取output 插件
 	plugin, err := registry.GetPlugin(registry.OutputPlugin, pipelineConfig.OutputPlugin.Type)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -53,6 +56,7 @@ func ParsePlugins(pipelineConfig config.PipelineConfigV3) (*Server, error) {
 	}
 	server.Output = output
 
+	// output插件载入配置
 	if err := plugin.Configure(pipelineConfig.PipelineName, pipelineConfig.OutputPlugin.Config); err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -106,6 +110,8 @@ func ParsePlugins(pipelineConfig config.PipelineConfigV3) (*Server, error) {
 
 func NewServer(pipelineConfig config.PipelineConfigV3) (*Server, error) {
 	env.PipelineName = pipelineConfig.PipelineName
+
+	// 初始化server
 	server, err := ParsePlugins(pipelineConfig)
 	if err != nil {
 		return nil, err
@@ -118,6 +124,7 @@ func NewServer(pipelineConfig config.PipelineConfigV3) (*Server, error) {
 		return nil, errors.Errorf("input plugin is not a position cache creator")
 	}
 
+	//初始化binlog位点
 	if p, err := newer.NewPositionCache(); err != nil {
 		return nil, errors.Trace(err)
 	} else {
@@ -149,6 +156,7 @@ func (s *Server) Start() error {
 	s.Lock()
 	defer s.Unlock()
 
+	// 先start output
 	switch o := s.Output.(type) {
 	case core.SynchronousOutput:
 		if err := o.Start(); err != nil {
@@ -162,10 +170,12 @@ func (s *Server) Start() error {
 		return errors.Errorf("output is an invalid type")
 	}
 
+	//启动调度器
 	if err := s.Scheduler.Start(s.Output); err != nil {
 		return errors.Trace(err)
 	}
 
+	//开启缓存定时器,定时刷新到数据库中,使用input的db
 	if err := s.PositionCache.Start(); err != nil {
 		return errors.Trace(err)
 	}

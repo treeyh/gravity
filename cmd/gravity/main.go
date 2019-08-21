@@ -36,6 +36,7 @@ var myJson = json.Config{
 }.Froze()
 
 func main() {
+	// 初始化命令行参数
 	cfg := config.NewConfig()
 	err := cfg.ParseCmd(os.Args[1:])
 	switch errors.Cause(err) {
@@ -46,7 +47,9 @@ func main() {
 		log.Fatalf("parse cmd flags errors: %s\n", err)
 	}
 
+	// 对阻塞事件采样, <=0则不采样
 	runtime.SetBlockProfileRate(cfg.BlockProfileRate)
+	// pprof查询互斥锁对象的不开启 0
 	runtime.SetMutexProfileFraction(cfg.MutexProfileFraction)
 
 	if cfg.Version {
@@ -57,6 +60,7 @@ func main() {
 	log.Info("xxhash backend: ", xxhash.Backend)
 
 	if cfg.ConfigFile != "" {
+		// 读取命令行指定配置
 		if err := cfg.ConfigFromFile(cfg.ConfigFile); err != nil {
 			log.Fatalf("failed to load config from file: %v", errors.ErrorStack(err))
 		}
@@ -71,11 +75,14 @@ func main() {
 	hash := core.HashConfig(string(content))
 
 	logutil.MustInitLogger(&cfg.Log)
+
+	//输出欢迎及状态信息
 	utils.LogRawInfo("gravity")
 
 	logutil.PipelineName = cfg.PipelineConfig.PipelineName
 	consts.GravityDBName = cfg.PipelineConfig.InternalDBName
 
+	// 注册退出处理handler
 	log.RegisterExitHandler(func() {
 		hplugin.CleanupClients()
 	})
@@ -85,6 +92,7 @@ func main() {
 		log.Fatal(errors.ErrorStack(err))
 	}
 
+	//如果配置清除binlog位点,则清除server中位点缓存
 	if cfg.ClearPosition {
 		if err := server.PositionCache.Clear(); err != nil {
 			log.Errorf("failed to clear position, err: %v", errors.ErrorStack(err))
@@ -92,6 +100,7 @@ func main() {
 		return
 	}
 
+	// 启动协程web server，便于获取运行状态
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
 		http.HandleFunc("/reset", resetHandler(server, cfg.PipelineConfig))
@@ -104,22 +113,25 @@ func main() {
 		log.Info("starting http server")
 	}()
 
+	// 启动工作server
 	err = server.Start()
 	if err != nil {
 		log.Fatal(errors.ErrorStack(err))
 	}
 
+	// 创建监听器
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(errors.Trace(err))
 	}
 	defer watcher.Close()
-
+	// 监听配置文件变化
 	err = watcher.Add(cfg.ConfigFile)
 	if err != nil {
 		log.Fatal(errors.Trace(err))
 	}
 
+	//创建进程信号channel对象
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc,
 		syscall.SIGHUP,
@@ -131,6 +143,7 @@ func main() {
 	// batch mode won't continue if the return code of this process is 0.
 	// This process exit with 0 only when the input is done in batch mode.
 	// For all the other cases, this process exit with 1.
+	//对于批处理模式下.k8s,在等待输入完成时才以0退出进程
 	if cfg.PipelineConfig.InputPlugin.Mode == config.Batch {
 		go func(server *app.Server) {
 			<-server.Input.Done()

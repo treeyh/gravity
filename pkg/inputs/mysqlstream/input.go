@@ -150,7 +150,7 @@ func (plugin *mysqlStreamInputPlugin) NewPositionCache() (position_cache.Positio
 
 func (plugin *mysqlStreamInputPlugin) Start(emitter core.Emitter, router core.Router, positionCache position_cache.PositionCacheInterface) error {
 	plugin.positionCache = positionCache
-
+	// 初始化源数据链接
 	sourceDB, err := utils.CreateDBConnection(plugin.cfg.Source)
 	if err != nil {
 		log.Fatalf("[gravity] failed to create source connection %v", errors.ErrorStack(err))
@@ -173,6 +173,7 @@ func (plugin *mysqlStreamInputPlugin) Start(emitter core.Emitter, router core.Ro
 	if err != nil {
 		return errors.Trace(err)
 	}
+	// 启动binlog checker
 	if err := plugin.binlogChecker.Start(); err != nil {
 		return errors.Trace(err)
 	}
