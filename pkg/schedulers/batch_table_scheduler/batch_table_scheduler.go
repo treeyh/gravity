@@ -391,7 +391,7 @@ func (scheduler *batchScheduler) dispatchMsg(msg *core.Msg) error {
 
 func (scheduler *batchScheduler) startTableDispatcher(tableKey string) {
 	scheduler.tableBuffers[tableKey] = make(chan *core.Msg, scheduler.cfg.MaxBatchPerWorker*10)
-	scheduler.tableLatchC[tableKey] = make(chan uint64, scheduler.cfg.MaxBatchPerWorker*10)
+	scheduler.tableLatchC[tableKey] = make(chan uint64, scheduler.cfg.SlidingWindowSize)
 	scheduler.tableBufferWg.Add(1)
 
 	go func(c chan *core.Msg, tableLatchC chan uint64, key string) {
@@ -488,9 +488,14 @@ func (scheduler *batchScheduler) startTableDispatcher(tableKey string) {
 			}
 
 			if len(curBatch) > 0 {
-				queueIdx := round % uint(scheduler.cfg.NrWorker)
-				round++
-				scheduler.workerQueues[queueIdx] <- curBatch
+				if curBatch[0].Type == core.MsgDDL {
+					ddlIdx := utils.GenHashKey(utils.TableIdentity(curBatch[0].Database, curBatch[0].Table)) % uint32(scheduler.cfg.NrWorker)
+					scheduler.workerQueues[ddlIdx] <- curBatch
+				} else {
+					queueIdx := round % uint(scheduler.cfg.NrWorker)
+					round++
+					scheduler.workerQueues[queueIdx] <- curBatch
+				}
 			}
 
 			// delete the delivered messages

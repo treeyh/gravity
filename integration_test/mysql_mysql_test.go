@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moiot/gravity/pkg/inputs"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/moiot/gravity/pkg/app"
@@ -123,6 +125,159 @@ func TestMySQLToMySQLStream(t *testing.T) {
 	server.Close()
 
 	r.NoError(generator.TestChecksum())
+}
+
+func TestTableNotExists(t *testing.T) {
+	r := require.New(t)
+
+	sourceDBName := strings.ToLower(t.Name()) + "_source"
+	targetDBName := strings.ToLower(t.Name()) + "_target"
+
+	sourceDB := mysql_test.MustSetupSourceDB(sourceDBName)
+	defer sourceDB.Close()
+	targetDB := mysql_test.MustSetupTargetDB(targetDBName)
+	defer targetDB.Close()
+
+	sourceDBConfig := mysql_test.SourceDBConfig()
+	targetDBConfig := mysql_test.TargetDBConfig()
+
+	dbUtil := utils.NewMySQLDB(sourceDB)
+	binlogFilePos, gtid, err := dbUtil.GetMasterStatus()
+	r.NoError(err)
+
+	pipelineConfig := config.PipelineConfigV3{
+		PipelineName: t.Name(),
+		Version:      config.PipelineConfigV3Version,
+		InputPlugin: config.InputConfig{
+			Type: inputs.Mysql,
+			Mode: config.Stream,
+			Config: utils.MustAny2Map(mysqlstream.MySQLBinlogInputPluginConfig{
+				Source: sourceDBConfig,
+				StartPosition: &config.MySQLBinlogPosition{
+					BinLogFileName: binlogFilePos.Name,
+					BinLogFilePos:  binlogFilePos.Pos,
+					BinlogGTID:     gtid.String(),
+				},
+			}),
+		},
+		OutputPlugin: config.GenericPluginConfig{
+			Type: "mysql",
+			Config: utils.MustAny2Map(mysql.MySQLPluginConfig{
+				DBConfig:  targetDBConfig,
+				EnableDDL: true,
+				Routes: []map[string]interface{}{
+					{
+						"match-schema":  sourceDBName,
+						"match-table":   "*",
+						"target-schema": targetDBName,
+					},
+				},
+			}),
+		},
+	}
+
+	fullTblName := fmt.Sprintf("`%s`.`t`", sourceDBName)
+	_, err = sourceDB.Exec(fmt.Sprintf("CREATE TABLE %s (`id` int(11) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", fullTblName))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("insert into %s(id) values (1);", fullTblName))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("drop table %s;", fullTblName))
+	r.NoError(err)
+
+	err = mysql_test.SendDeadSignal(sourceDB, pipelineConfig.PipelineName)
+	r.NoError(err)
+
+	// start the server
+	server, err := app.NewServer(pipelineConfig)
+	r.NoError(err)
+
+	r.NoError(server.Start())
+
+	server.Input.Wait()
+	server.Close()
+}
+
+func TestRename(t *testing.T) {
+	r := require.New(t)
+	var err error
+
+	sourceDBName := strings.ToLower(t.Name()) + "_source"
+	targetDBName := strings.ToLower(t.Name()) + "_target"
+
+	sourceDB := mysql_test.MustSetupSourceDB(sourceDBName)
+	defer sourceDB.Close()
+	targetDB := mysql_test.MustSetupTargetDB(targetDBName)
+	defer targetDB.Close()
+
+	sourceDBConfig := mysql_test.SourceDBConfig()
+	targetDBConfig := mysql_test.TargetDBConfig()
+
+	pipelineConfig := config.PipelineConfigV3{
+		PipelineName: t.Name(),
+		Version:      config.PipelineConfigV3Version,
+		InputPlugin: config.InputConfig{
+			Type: inputs.Mysql,
+			Mode: config.Stream,
+			Config: utils.MustAny2Map(mysqlstream.MySQLBinlogInputPluginConfig{
+				Source: sourceDBConfig,
+			}),
+		},
+		OutputPlugin: config.GenericPluginConfig{
+			Type: "mysql",
+			Config: utils.MustAny2Map(mysql.MySQLPluginConfig{
+				DBConfig:  targetDBConfig,
+				EnableDDL: true,
+				Routes: []map[string]interface{}{
+					{
+						"match-schema":  sourceDBName,
+						"match-table":   "a*",
+						"target-schema": targetDBName,
+					},
+					{
+						"match-schema":  sourceDBName,
+						"match-table":   "b*",
+						"target-schema": targetDBName,
+					},
+				},
+			}),
+		},
+	}
+
+	// start the server
+	server, err := app.NewServer(pipelineConfig)
+	r.NoError(err)
+
+	r.NoError(server.Start())
+
+	names := []string{"a", "a_gho", "b", "b_gho", "c"}
+
+	for _, n := range names {
+		_, err = sourceDB.Exec(fmt.Sprintf("CREATE TABLE `%s`.`%s` (`id` int(11) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", sourceDBName, n))
+		r.NoError(err)
+	}
+	_, err = sourceDB.Exec(fmt.Sprintf("rename table `%s`.`a` to `%s`.`a_old`, `%s`.`a_gho` to `%s`.`a`", sourceDBName, sourceDBName, sourceDBName, sourceDBName))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("rename table `%s`.`b` to `%s`.`b_old`", sourceDBName, sourceDBName))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("rename table `%s`.`b_gho` to `%s`.`b`", sourceDBName, sourceDBName))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("rename table `%s`.`c` to `%s`.`cc`", sourceDBName, sourceDBName))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("rename table `%s`.`cc` to `%s`.`ac`", sourceDBName, sourceDBName))
+	r.NoError(err)
+
+	err = mysql_test.SendDeadSignal(sourceDB, pipelineConfig.PipelineName)
+	r.NoError(err)
+
+	server.Input.Wait()
+	server.Close()
+
+	expectedNames := []string{"a_old", "a", "b_old", "b"}
+
+	for _, n := range expectedNames {
+		_, err = targetDB.Exec(fmt.Sprintf("select * from `%s`.`%s`", targetDBName, n))
+		r.NoError(err)
+	}
 }
 
 func TestMySQLBatch(t *testing.T) {
@@ -1136,20 +1291,30 @@ func TestMySQLTagDDL(t *testing.T) {
 	r.NoError(server.Start())
 
 	tbl := "abc"
+	tbl2 := "abcd"
 	_, err = sourceDB.Exec(fmt.Sprintf("%screate table `%s`.`%s`(`id` int(11),  PRIMARY KEY (`id`)) ENGINE=InnoDB", consts.DDLTag, sourceDBName, tbl))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("create table `%s`.`%s`(`id` int(11),  PRIMARY KEY (`id`)) ENGINE=InnoDB", sourceDBName, tbl2))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("%sdrop table `%s`.`%s`;", consts.DDLTag, sourceDBName, tbl))
+	r.NoError(err)
+	_, err = sourceDB.Exec(fmt.Sprintf("%sdrop table `%s`.`%s`;", consts.DDLTag, sourceDBName, tbl2))
 	r.NoError(err)
 
 	err = mysql_test.SendDeadSignal(sourceDB, pipelineConfig.PipelineName)
 	r.NoError(err)
 
 	<-server.Input.Done()
-
 	server.Close()
 
 	row := targetDB.QueryRow(fmt.Sprintf("SELECT table_name FROM information_schema.tables WHERE  TABLE_SCHEMA = '%s' and table_name = '%s'", targetDBName, tbl))
 	var tblName string
 	err = row.Scan(&tblName)
-	r.Equal(sql.ErrNoRows, err)
+	r.Equal(sql.ErrNoRows, err) // create ignored by gravity
+
+	row = targetDB.QueryRow(fmt.Sprintf("SELECT table_name FROM information_schema.tables WHERE  TABLE_SCHEMA = '%s' and table_name = '%s'", targetDBName, tbl2))
+	err = row.Scan(&tblName)
+	r.Equal(sql.ErrNoRows, err) // mysql ignores annotation in drop stmt, it will be executed
 }
 
 func TestMySQLDDL(t *testing.T) {
