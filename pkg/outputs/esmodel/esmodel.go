@@ -284,8 +284,8 @@ func (output *EsModelOutput) insertOneOne(msg *core.Msg, route *routers.EsModelR
 
 	data := &map[string]interface{}{}
 
-	if routeOne.MatchType == jsonColumn && routeOne.MatchColumn != "" {
-		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeOne.MatchColumn])
+	if routeOne.Type == jsonColumn && routeOne.DataColumn != "" {
+		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeOne.DataColumn])
 		params, err := buildJsonMap(columnContent)
 		if err != nil || params == nil {
 			(*data)[routeOne.PropertyName] = nil
@@ -317,8 +317,8 @@ func (output *EsModelOutput) insertOneMany(msg *core.Msg, route *routers.EsModel
 	docId := genDocID(msg, routeMany.FkColumn)
 
 	var req *elastic.BulkUpdateRequest
-	if routeMany.MatchType == jsonColumn && routeMany.MatchColumn != "" {
-		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeMany.MatchColumn])
+	if routeMany.Type == jsonColumn && routeMany.DataColumn != "" {
+		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeMany.DataColumn])
 		params, err := buildJsonMaps(columnContent)
 		data := &map[string]interface{}{
 			routeMany.PropertyName: []interface{}{},
@@ -397,7 +397,7 @@ func (output *EsModelOutput) deleteOneOne(msg *core.Msg, route *routers.EsModelR
 	docId := genDocIDBySon(msg, routeOne.FkColumn)
 	data := &map[string]interface{}{}
 
-	if routeOne.MatchType == jsonColumn && routeOne.MatchColumn != "" {
+	if routeOne.Type == jsonColumn && routeOne.DataColumn != "" {
 		(*data)[routeOne.PropertyName] = nil
 	} else {
 		if routeOne.Mode == routers.EsModelOneOneObject {
@@ -427,7 +427,7 @@ func (output *EsModelOutput) deleteOneMany(msg *core.Msg, route *routers.EsModel
 	docId := genDocIDBySon(msg, routeMany.FkColumn)
 
 	var req *elastic.BulkUpdateRequest
-	if routeMany.MatchType == jsonColumn && routeMany.MatchColumn != "" {
+	if routeMany.Type == jsonColumn && routeMany.DataColumn != "" {
 		data := &map[string]interface{}{
 			routeMany.PropertyName: []interface{}{},
 		}
@@ -499,8 +499,8 @@ func (output *EsModelOutput) updateOneOne(msg *core.Msg, route *routers.EsModelR
 	docId := genDocIDBySon(msg, routeOne.FkColumn)
 
 	data := &map[string]interface{}{}
-	if routeOne.MatchType == jsonColumn && routeOne.MatchColumn != "" {
-		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeOne.MatchColumn])
+	if routeOne.Type == jsonColumn && routeOne.DataColumn != "" {
+		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeOne.DataColumn])
 		params, err := buildJsonMap(columnContent)
 		if err != nil || params == nil {
 			(*data)[routeOne.PropertyName] = nil
@@ -532,8 +532,8 @@ func (output *EsModelOutput) updateOneMany(msg *core.Msg, route *routers.EsModel
 
 	docId := genDocIDBySon(msg, routeMany.FkColumn)
 	var req *elastic.BulkUpdateRequest
-	if routeMany.MatchType == jsonColumn && routeMany.MatchColumn != "" {
-		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeMany.MatchColumn])
+	if routeMany.Type == jsonColumn && routeMany.DataColumn != "" {
+		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeMany.DataColumn])
 		params, err := buildJsonMaps(columnContent)
 		data := &map[string]interface{}{
 			routeMany.PropertyName: []interface{}{},

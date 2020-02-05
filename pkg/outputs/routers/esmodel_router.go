@@ -35,8 +35,8 @@ type EsModelBaseRoute struct {
 
 type EsModelOneManyRoute struct {
 	EsModelBaseRoute
-	MatchType    string
-	MatchColumn  string
+	Type         string
+	DataColumn   string
 	FkColumn     string
 	PropertyName string
 }
@@ -263,23 +263,23 @@ func NewEsModelOneManyRoute(routeConfig map[string]interface{}, manyRoute *EsMod
 	}
 	manyRoute.PropertyName = pname
 
-	mcolumn, err := getString(routeConfig, "match-column", "")
+	dcolumn, err := getString(routeConfig, "data-column", "")
 	if err != nil {
 		return nil, err
 	}
-	manyRoute.MatchColumn = mcolumn
+	manyRoute.DataColumn = dcolumn
 
-	mtype, err := getString(routeConfig, "match-type", "")
+	mtype, err := getString(routeConfig, "type", "")
 	if err != nil {
 		return nil, err
 	}
-	manyRoute.MatchType = mtype
+	manyRoute.Type = mtype
 
 	if mtype == "JsonColumn" {
 		if pname == "" {
 			return nil, errors.Errorf("EsModelOneOneExtend mode match-type is JsonColumn, property-name must be set")
 		}
-		if mcolumn == "" {
+		if dcolumn == "" {
 			return nil, errors.Errorf("EsModelOneOneExtend mode match-type is JsonColumn, match-column must be set")
 		}
 	}
