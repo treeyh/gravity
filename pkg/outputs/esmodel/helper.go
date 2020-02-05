@@ -6,6 +6,7 @@ import (
 	"github.com/moiot/gravity/pkg/utils"
 	"github.com/olivere/elastic/v7"
 	log "github.com/sirupsen/logrus"
+	"strings"
 )
 
 func genDocID(msg *core.Msg, fk string) string {
@@ -72,4 +73,30 @@ func printJsonEncodef(format string, data ...interface{}) {
 		fmt.Printf(format+"\n", jsons...)
 	}
 	log.Infof(format, jsons...)
+}
+
+func buildJsonMap(jsonStr string) (*map[string]interface{}, error) {
+
+	if !strings.HasPrefix(jsonStr, "{") || !strings.HasSuffix(jsonStr, "}") {
+		return nil, nil
+	}
+	var data map[string]interface{}
+	err := json.Unmarshal([]byte(jsonStr), &data)
+	if err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+func buildJsonMaps(jsonStr string) (*[]map[string]interface{}, error) {
+
+	if !strings.HasPrefix(jsonStr, "[") || !strings.HasSuffix(jsonStr, "]") {
+		return nil, nil
+	}
+	var data []map[string]interface{}
+	err := json.Unmarshal([]byte(jsonStr), &data)
+	if err != nil {
+		return nil, err
+	}
+	return &data, nil
 }

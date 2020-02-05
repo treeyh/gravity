@@ -20,6 +20,8 @@ import (
 const (
 	Name = "esmodel"
 
+	jsonColumn = "JsonColumn"
+
 	esModelInsertListScriptName = "GravityEsModelListInsertScript"
 	/**
 	if(ctx._source.containsKey(params.field)){
@@ -243,12 +245,18 @@ func (output *EsModelOutput) insertMsg(msg *core.Msg, route *routers.EsModelRout
 	}
 	for _, r := range *route.OneOne {
 		if r.Match(msg) {
-			reqs = append(reqs, output.insertOneOne(msg, route, r))
+			req := output.insertOneOne(msg, route, r)
+			if req != nil {
+				reqs = append(reqs, req)
+			}
 		}
 	}
 	for _, r := range *route.OneMany {
 		if r.Match(msg) {
-			reqs = append(reqs, output.insertOneMany(msg, route, r))
+			req := output.insertOneMany(msg, route, r)
+			if req != nil {
+				reqs = append(reqs, req)
+			}
 		}
 	}
 	return &reqs
@@ -275,10 +283,21 @@ func (output *EsModelOutput) insertOneOne(msg *core.Msg, route *routers.EsModelR
 	docId := genDocID(msg, routeOne.FkColumn)
 
 	data := &map[string]interface{}{}
-	if routeOne.Mode == routers.EsModelOneOneObject {
-		(*data)[routeOne.PropertyName] = transMsgData(&msg.DmlMsg.Data, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+
+	if routeOne.MatchType == jsonColumn && routeOne.MatchColumn != "" {
+		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeOne.MatchColumn])
+		params, err := buildJsonMap(columnContent)
+		if err != nil || params == nil {
+			(*data)[routeOne.PropertyName] = nil
+		} else {
+			(*data)[routeOne.PropertyName] = transMsgData(params, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+		}
 	} else {
-		data = transMsgData(&msg.DmlMsg.Data, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+		if routeOne.Mode == routers.EsModelOneOneObject {
+			(*data)[routeOne.PropertyName] = transMsgData(&msg.DmlMsg.Data, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+		} else {
+			data = transMsgData(&msg.DmlMsg.Data, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+		}
 	}
 	printJsonEncodef("create oneone obj docId: %s, json: %s ", docId, data)
 
@@ -357,11 +376,17 @@ func (output *EsModelOutput) deleteMain(msg *core.Msg, route *routers.EsModelRou
 func (output *EsModelOutput) deleteOneOne(msg *core.Msg, route *routers.EsModelRoute, routeOne *routers.EsModelOneOneRoute) *elastic.BulkUpdateRequest {
 	docId := genDocIDBySon(msg, routeOne.FkColumn)
 	data := &map[string]interface{}{}
-	if routeOne.Mode == routers.EsModelOneOneObject {
+
+	if routeOne.MatchType == jsonColumn && routeOne.MatchColumn != "" {
 		(*data)[routeOne.PropertyName] = nil
 	} else {
-		data = transMsgData(&msg.DmlMsg.Old, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, true)
+		if routeOne.Mode == routers.EsModelOneOneObject {
+			(*data)[routeOne.PropertyName] = nil
+		} else {
+			data = transMsgData(&msg.DmlMsg.Old, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, true)
+		}
 	}
+
 	printJsonEncodef("delete oneone obj docId: %s , json: %s ", docId, data)
 
 	req := elastic.NewBulkUpdateRequest().
@@ -440,11 +465,22 @@ func (output *EsModelOutput) updateMain(msg *core.Msg, route *routers.EsModelRou
 func (output *EsModelOutput) updateOneOne(msg *core.Msg, route *routers.EsModelRoute, routeOne *routers.EsModelOneOneRoute) *elastic.BulkUpdateRequest {
 
 	docId := genDocIDBySon(msg, routeOne.FkColumn)
+
 	data := &map[string]interface{}{}
-	if routeOne.Mode == routers.EsModelOneOneObject {
-		(*data)[routeOne.PropertyName] = transMsgData(&msg.DmlMsg.Data, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+	if routeOne.MatchType == jsonColumn && routeOne.MatchColumn != "" {
+		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeOne.MatchColumn])
+		params, err := buildJsonMap(columnContent)
+		if err != nil || params == nil {
+			(*data)[routeOne.PropertyName] = nil
+		} else {
+			(*data)[routeOne.PropertyName] = transMsgData(params, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+		}
 	} else {
-		data = transMsgData(&msg.DmlMsg.Data, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+		if routeOne.Mode == routers.EsModelOneOneObject {
+			(*data)[routeOne.PropertyName] = transMsgData(&msg.DmlMsg.Data, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+		} else {
+			data = transMsgData(&msg.DmlMsg.Data, routeOne.IncludeColumn, routeOne.ExcludeColumn, routeOne.ConvertColumn, routeOne.PropertyPre, false)
+		}
 	}
 
 	req := elastic.NewBulkUpdateRequest().

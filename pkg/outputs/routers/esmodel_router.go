@@ -263,6 +263,27 @@ func NewEsModelOneManyRoute(routeConfig map[string]interface{}, manyRoute *EsMod
 	}
 	manyRoute.PropertyName = pname
 
+	mcolumn, err := getString(routeConfig, "match-column", "")
+	if err != nil {
+		return nil, err
+	}
+	manyRoute.MatchColumn = mcolumn
+
+	mtype, err := getString(routeConfig, "match-type", "")
+	if err != nil {
+		return nil, err
+	}
+	manyRoute.MatchType = mtype
+
+	if mtype == "JsonColumn" {
+		if pname == "" {
+			return nil, errors.Errorf("EsModelOneOneExtend mode match-type is JsonColumn, property-name must be set")
+		}
+		if mcolumn == "" {
+			return nil, errors.Errorf("EsModelOneOneExtend mode match-type is JsonColumn, match-column must be set")
+		}
+	}
+
 	return manyRoute, nil
 }
 

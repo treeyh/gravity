@@ -30,7 +30,7 @@ func TestNewEsModelRoutes(t *testing.T) {
 
 	cfg := config.NewConfig()
 
-	if err := cfg.ConfigFromFile("../../../docs/2.0/example-mysql2esmodel.toml"); err != nil {
+	if err := cfg.ConfigFromFile("../../../docs/2.0/example-mysql2esmodel2.toml"); err != nil {
 		println(err)
 	}
 
