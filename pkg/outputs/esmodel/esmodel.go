@@ -316,25 +316,45 @@ func (output *EsModelOutput) insertOneOne(msg *core.Msg, route *routers.EsModelR
 func (output *EsModelOutput) insertOneMany(msg *core.Msg, route *routers.EsModelRoute, routeMany *routers.EsModelOneManyRoute) *elastic.BulkUpdateRequest {
 	docId := genDocID(msg, routeMany.FkColumn)
 
-	k, v := genPrimary(msg)
-	message := transMsgData(&msg.DmlMsg.Data, routeMany.IncludeColumn, routeMany.ExcludeColumn, routeMany.ConvertColumn, "", false)
-	data := &map[string]interface{}{
-		routeMany.PropertyName: []interface{}{message},
+	var req *elastic.BulkUpdateRequest
+	if routeMany.MatchType == jsonColumn && routeMany.MatchColumn != "" {
+		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeMany.MatchColumn])
+		params, err := buildJsonMaps(columnContent)
+		data := &map[string]interface{}{
+			routeMany.PropertyName: []interface{}{},
+		}
+		if err != nil || params == nil {
+
+		} else {
+			(*data)[routeMany.PropertyName] = transMsgDatas(params, routeMany.IncludeColumn, routeMany.ExcludeColumn, routeMany.ConvertColumn, "", false)
+		}
+		req = elastic.NewBulkUpdateRequest().
+			Index(route.IndexName).
+			RetryOnConflict(output.config.ServerConfig.RetryCount).
+			Id(docId).
+			Doc(data).
+			Upsert(data)
+	} else {
+
+		k, v := genPrimary(msg)
+		message := transMsgData(&msg.DmlMsg.Data, routeMany.IncludeColumn, routeMany.ExcludeColumn, routeMany.ConvertColumn, "", false)
+		data := &map[string]interface{}{
+			routeMany.PropertyName: []interface{}{message},
+		}
+		params := map[string]interface{}{}
+		params["message"] = message
+		params["field"] = routeMany.PropertyName
+		params["value"] = v
+		params["key"] = k
+		printJsonEncodef("create onemany obj docId: %s, json: %s, params: %s ", docId, data, params)
+
+		req = elastic.NewBulkUpdateRequest().
+			Index(route.IndexName).
+			RetryOnConflict(output.config.ServerConfig.RetryCount).
+			Id(docId).
+			Upsert(data).
+			Script(elastic.NewScriptStored(esModelInsertListScriptName).Params(params))
 	}
-	params := map[string]interface{}{}
-	params["message"] = message
-	params["field"] = routeMany.PropertyName
-	params["value"] = v
-	params["key"] = k
-	printJsonEncodef("create onemany obj docId: %s, json: %s, params: %s ", docId, data, params)
-
-	req := elastic.NewBulkUpdateRequest().
-		Index(route.IndexName).
-		RetryOnConflict(output.config.ServerConfig.RetryCount).
-		Id(docId).
-		Upsert(data).
-		Script(elastic.NewScriptStored(esModelInsertListScriptName).Params(params))
-
 	if routers.EsModelVersion6 == route.EsVer {
 		req = req.Type(route.TypeName)
 	}
@@ -406,19 +426,31 @@ func (output *EsModelOutput) deleteOneMany(msg *core.Msg, route *routers.EsModel
 
 	docId := genDocIDBySon(msg, routeMany.FkColumn)
 
-	k, v := genPrimary(msg)
-	params := map[string]interface{}{}
-	params["field"] = routeMany.PropertyName
-	params["value"] = v
-	params["key"] = k
+	var req *elastic.BulkUpdateRequest
+	if routeMany.MatchType == jsonColumn && routeMany.MatchColumn != "" {
+		data := &map[string]interface{}{
+			routeMany.PropertyName: []interface{}{},
+		}
+		req = elastic.NewBulkUpdateRequest().
+			Index(route.IndexName).
+			RetryOnConflict(output.config.ServerConfig.RetryCount).
+			Id(docId).
+			Doc(data).
+			Upsert(data)
+	} else {
+		k, v := genPrimary(msg)
+		params := map[string]interface{}{}
+		params["field"] = routeMany.PropertyName
+		params["value"] = v
+		params["key"] = k
 
-	req := elastic.NewBulkUpdateRequest().
-		Index(route.IndexName).
-		RetryOnConflict(output.config.ServerConfig.RetryCount).
-		Id(docId).
-		Script(elastic.NewScriptStored(esModelDeleteListScriptName).Params(params))
-
-	printJsonEncodef("delete onemany obj %s json: %s ", docId, params)
+		req = elastic.NewBulkUpdateRequest().
+			Index(route.IndexName).
+			RetryOnConflict(output.config.ServerConfig.RetryCount).
+			Id(docId).
+			Script(elastic.NewScriptStored(esModelDeleteListScriptName).Params(params))
+		printJsonEncodef("delete onemany obj %s json: %s ", docId, params)
+	}
 	if routers.EsModelVersion6 == route.EsVer {
 		req = req.Type(route.TypeName)
 	}
@@ -499,27 +531,45 @@ func (output *EsModelOutput) updateOneOne(msg *core.Msg, route *routers.EsModelR
 func (output *EsModelOutput) updateOneMany(msg *core.Msg, route *routers.EsModelRoute, routeMany *routers.EsModelOneManyRoute) *elastic.BulkUpdateRequest {
 
 	docId := genDocIDBySon(msg, routeMany.FkColumn)
-	k, v := genPrimary(msg)
-	message := transMsgData(&msg.DmlMsg.Data, routeMany.IncludeColumn, routeMany.ExcludeColumn, routeMany.ConvertColumn, "", false)
-	data := &map[string]interface{}{
-		routeMany.PropertyName: []interface{}{message},
+	var req *elastic.BulkUpdateRequest
+	if routeMany.MatchType == jsonColumn && routeMany.MatchColumn != "" {
+		columnContent := fmt.Sprint(msg.DmlMsg.Data[routeMany.MatchColumn])
+		params, err := buildJsonMaps(columnContent)
+		data := &map[string]interface{}{
+			routeMany.PropertyName: []interface{}{},
+		}
+		if err == nil && params != nil {
+			(*data)[routeMany.PropertyName] = transMsgDatas(params, routeMany.IncludeColumn, routeMany.ExcludeColumn, routeMany.ConvertColumn, "", false)
+		}
+		req = elastic.NewBulkUpdateRequest().
+			Index(route.IndexName).
+			RetryOnConflict(output.config.ServerConfig.RetryCount).
+			Id(docId).
+			Doc(data).
+			Upsert(data)
+	} else {
+		k, v := genPrimary(msg)
+		message := transMsgData(&msg.DmlMsg.Data, routeMany.IncludeColumn, routeMany.ExcludeColumn, routeMany.ConvertColumn, "", false)
+		data := &map[string]interface{}{
+			routeMany.PropertyName: []interface{}{message},
+		}
+		params := map[string]interface{}{}
+		params["message"] = message
+		// updates 可以仅传改动的map，暂不考虑
+		params["updates"] = message
+		params["field"] = routeMany.PropertyName
+		params["value"] = v
+		params["key"] = k
+
+		req = elastic.NewBulkUpdateRequest().
+			Index(route.IndexName).
+			RetryOnConflict(output.config.ServerConfig.RetryCount).
+			Id(genDocIDBySon(msg, routeMany.FkColumn)).
+			Upsert(data).
+			Script(elastic.NewScriptStored(esModelUpdateListScriptName).Params(params))
+
+		printJsonEncodef("update main obj %s json: %s, params: %s.", docId, data, params)
 	}
-	params := map[string]interface{}{}
-	params["message"] = message
-	// updates 可以仅传改动的map，暂不考虑
-	params["updates"] = message
-	params["field"] = routeMany.PropertyName
-	params["value"] = v
-	params["key"] = k
-
-	req := elastic.NewBulkUpdateRequest().
-		Index(route.IndexName).
-		RetryOnConflict(output.config.ServerConfig.RetryCount).
-		Id(genDocIDBySon(msg, routeMany.FkColumn)).
-		Upsert(data).
-		Script(elastic.NewScriptStored(esModelUpdateListScriptName).Params(params))
-
-	printJsonEncodef("update main obj %s json: %s, params: %s.", docId, data, params)
 	if routers.EsModelVersion6 == route.EsVer {
 		req = req.Type(route.TypeName)
 	}
@@ -818,4 +868,54 @@ func transMsgData(data *map[string]interface{}, includes *map[string]string, exc
 	}
 
 	return trans
+}
+
+/**
+转义数据集, 如果是oneone子对象删除数据集，value为nil
+*/
+func transMsgDatas(data *[]map[string]interface{}, includes *map[string]string, excludes *map[string]string,
+	converts *map[string]string, propPre string, isNil bool) *[]map[string]interface{} {
+
+	var transs []map[string]interface{}
+	for _, vv := range *data {
+		trans := map[string]interface{}{}
+		for k, v := range vv {
+			if _, ok := (*excludes)[k]; ok {
+				// 过滤策略不写入
+				continue
+			}
+			if len((*includes)) > 0 {
+				if _, ok := (*includes)[k]; !ok {
+					// 不在包含列中不写入
+					continue
+				}
+			}
+
+			if key, ok := (*converts)[k]; ok {
+				// 替换列名
+				if isNil {
+					trans[key] = nil
+				} else {
+					trans[key] = v
+				}
+				continue
+			}
+			if propPre != "" {
+				if isNil {
+					trans[fmt.Sprintf("%s%s", propPre, k)] = nil
+				} else {
+					trans[fmt.Sprintf("%s%s", propPre, k)] = v
+				}
+				continue
+			}
+			if isNil {
+				trans[k] = nil
+			} else {
+				trans[k] = v
+			}
+		}
+		transs = append(transs, trans)
+	}
+
+	return &transs
 }
