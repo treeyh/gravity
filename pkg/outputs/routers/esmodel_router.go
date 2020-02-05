@@ -35,6 +35,8 @@ type EsModelBaseRoute struct {
 
 type EsModelOneManyRoute struct {
 	EsModelBaseRoute
+	MatchType    string
+	MatchColumn  string
 	FkColumn     string
 	PropertyName string
 }
